@@ -1,0 +1,86 @@
+### 0. Nginx worker user
+$ ps -o user,cmd -C nginx
+USER     CMD
+root     nginx: master process nginx
+www-data nginx: worker process
+www-data nginx: worker process
+www-data nginx: worker process
+www-data nginx: worker process
+www-data nginx: worker process
+www-data nginx: worker process
+www-data nginx: worker process
+www-data nginx: worker process
+
+### 1. TRƯỚC khi phân quyền
+$ ls -la /var/www/ptit-web/
+total 12
+drwxr-xr-x 3 root root 4096 Sep 30 14:15 .
+drwxr-xr-x 4 root root 4096 Sep 30 14:15 ..
+drwxr-xr-x 2 root root 4096 Sep 30 14:15 html
+$ ls -la /var/www/ptit-web/html/
+total 12
+drwxr-xr-x 2 root root 4096 Sep 30 14:15 .
+drwxr-xr-x 3 root root 4096 Sep 30 14:15 ..
+-rw-r--r-- 1 root root   21 Sep 30 14:15 index.html
+
+$ su - devops -c 'echo "Update" >> /var/www/ptit-web/html/index.html'
+-bash: line 1: /var/www/ptit-web/html/index.html: Permission denied
+(exit code: 1)
+
+### 2. Phân quyền
+$ sudo chown -R devops:www-data /var/www/ptit-web
+$ sudo find /var/www/ptit-web -type d -exec chmod 2750 {} \;
+$ sudo find /var/www/ptit-web -type f -exec chmod 640 {} \;
+
+### 3. SAU khi phân quyền
+$ ls -la /var/www/ptit-web/
+total 12
+drwxr-s--- 3 devops www-data 4096 Sep 30 14:15 .
+drwxr-xr-x 4 root   root     4096 Sep 30 14:15 ..
+drwxr-s--- 2 devops www-data 4096 Sep 30 14:15 html
+$ ls -la /var/www/ptit-web/html/
+total 12
+drwxr-s--- 2 devops www-data 4096 Sep 30 14:15 .
+drwxr-s--- 3 devops www-data 4096 Sep 30 14:15 ..
+-rw-r----- 1 devops www-data   21 Sep 30 14:15 index.html
+$ stat -c "%A %a %U:%G %n" /var/www/ptit-web /var/www/ptit-web/html /var/www/ptit-web/html/index.html
+drwxr-s--- 2750 devops:www-data /var/www/ptit-web
+drwxr-s--- 2750 devops:www-data /var/www/ptit-web/html
+-rw-r----- 640 devops:www-data /var/www/ptit-web/html/index.html
+
+### 4. Kiểm tra ghi file bằng user devops (không sudo)
+$ su - devops
+devops$ whoami
+devops
+devops$ echo "Update" >> /var/www/ptit-web/html/index.html && echo "Ghi thanh cong"
+Ghi thanh cong
+devops$ cat /var/www/ptit-web/html/index.html
+<h1>PTIT Web v1</h1>
+Update
+
+### 5. Kiểm tra user khác (others) không truy cập được
+$ su - guest -c "cat /var/www/ptit-web/html/index.html"
+cat: /var/www/ptit-web/html/index.html: Permission denied
+
+### 6. Kiểm tra Nginx (www-data đọc được)
+$ sudo -u www-data cat /var/www/ptit-web/html/index.html
+<h1>PTIT Web v1</h1>
+Update
+$ sudo nginx -t
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+$ curl -i http://localhost/
+HTTP/1.1 200 OK
+Server: nginx/1.24.0 (Ubuntu)
+Date: Wed, 30 Sep 2026 14:15:22 GMT
+Content-Type: text/html
+Content-Length: 28
+Last-Modified: Wed, 30 Sep 2026 14:15:22 GMT
+Connection: keep-alive
+ETag: "6abd197a-1c"
+Accept-Ranges: bytes
+
+<h1>PTIT Web v1</h1>
+Update
+$ tail -n 5 /var/log/nginx/error.log
+(error.log trống -> không có lỗi Permission denied / 403)
